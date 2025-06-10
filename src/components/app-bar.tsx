@@ -16,6 +16,14 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import {
+  SignInButton,
+  SignUpButton,
+  SignedIn,
+  SignedOut,
+  UserButton,
+  useUser
+} from '@clerk/nextjs'
 
 const navigation = [
   {
@@ -41,13 +49,13 @@ const navigation = [
     icon: Bot,
     description: "A bot to curate you fav things",
   },
-
 ]
 
 export function AppBar() {
   const [isOpen, setIsOpen] = useState(false)
   const { theme, setTheme } = useTheme()
   const pathname = usePathname()
+  const { user } = useUser()
 
   const isActivePath = (path: string) => {
     return pathname === path
@@ -103,39 +111,64 @@ export function AppBar() {
               <span className="sr-only">Toggle theme</span>
             </Button>
 
-            {/* User Menu */}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon">
-                  <User className="h-4 w-4" />
-                  <span className="sr-only">User menu</span>
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-56">
-                <DropdownMenuItem>
-                  <LogIn className="mr-2 h-4 w-4" />
-                  <span>Sign In</span>
-                </DropdownMenuItem>
-                <DropdownMenuItem>
-                  <User className="mr-2 h-4 w-4" />
-                  <span>Create Account</span>
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem>
-                  <Heart className="mr-2 h-4 w-4" />
-                  <span>Favorites</span>
-                </DropdownMenuItem>
-                <DropdownMenuItem>
-                  <Ticket className="mr-2 h-4 w-4" />
-                  <span>My Bookings</span>
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem>
-                  <Settings className="mr-2 h-4 w-4" />
-                  <span>Settings</span>
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            {/* Authentication - Desktop */}
+            <SignedOut>
+              <div className="hidden md:flex items-center space-x-2">
+                <SignInButton mode="modal">
+                  <Button variant="ghost" size="sm">
+                    <LogIn className="mr-2 h-4 w-4" />
+                    Sign In
+                  </Button>
+                </SignInButton>
+                <SignUpButton mode="modal">
+                  <Button variant="outline" size="sm">
+                    <User className="mr-2 h-4 w-4" />
+                    Sign Up
+                  </Button>
+                </SignUpButton>
+              </div>
+            </SignedOut>
+
+            <SignedIn>
+              <div className="hidden md:flex items-center space-x-2">
+                {/* User Menu for signed in users */}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="icon">
+                      <User className="h-4 w-4" />
+                      <span className="sr-only">User menu</span>
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-56">
+                    <DropdownMenuItem>
+                      <User className="mr-2 h-4 w-4" />
+                      <span>Welcome, {user?.firstName || 'User'}!</span>
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem>
+                      <Heart className="mr-2 h-4 w-4" />
+                      <span>Favorites</span>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem>
+                      <Ticket className="mr-2 h-4 w-4" />
+                      <span>My Bookings</span>
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem>
+                      <Settings className="mr-2 h-4 w-4" />
+                      <span>Settings</span>
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                <UserButton 
+                  appearance={{
+                    elements: {
+                      avatarBox: "h-8 w-8"
+                    }
+                  }}
+                />
+              </div>
+            </SignedIn>
 
             {/* Mobile Menu */}
             <Sheet open={isOpen} onOpenChange={setIsOpen}>
@@ -185,49 +218,77 @@ export function AppBar() {
                     })}
 
                     {/* muBuddy */}
-                    <Button variant="ghost" className="w-full justify-start">
-                      <Bot className="mr-2 h-4 w-4" />
-                      <div className="flex flex-col items-start">
-                        <div className="flex items-center space-x-2">
-                          <span>muBuddy</span>
-                          <Badge variant="secondary" className="text-xs">
-                            AI
-                          </Badge>
+                    <Link href="/mubuddy" onClick={() => setIsOpen(false)}>
+                      <Button variant="ghost" className="w-full justify-start">
+                        <Bot className="mr-2 h-4 w-4" />
+                        <div className="flex flex-col items-start">
+                          <div className="flex items-center space-x-2">
+                            <span>muBuddy</span>
+                            <Badge variant="secondary" className="text-xs">
+                              AI
+                            </Badge>
+                          </div>
+                          <span className="text-xs text-muted-foreground">Your AI travel companion</span>
                         </div>
-                        <span className="text-xs text-muted-foreground">Your AI travel companion</span>
+                      </Button>
+                    </Link>
+                  </div>
+
+                  {/* Authentication - Mobile */}
+                  <SignedOut>
+                    <div className="space-y-2">
+                      <h3 className="text-sm font-medium text-muted-foreground">Account</h3>
+                      <SignInButton mode="modal">
+                        <Button variant="outline" className="w-full justify-start">
+                          <LogIn className="mr-2 h-4 w-4" />
+                          Sign In
+                        </Button>
+                      </SignInButton>
+                      <SignUpButton mode="modal">
+                        <Button variant="ghost" className="w-full justify-start">
+                          <User className="mr-2 h-4 w-4" />
+                          Create Account
+                        </Button>
+                      </SignUpButton>
+                    </div>
+                  </SignedOut>
+
+                  <SignedIn>
+                    {/* User Welcome */}
+                    <div className="space-y-2">
+                      <h3 className="text-sm font-medium text-muted-foreground">Account</h3>
+                      <div className="flex items-center space-x-3 p-2 rounded-lg bg-secondary/50">
+                        <UserButton 
+                          appearance={{
+                            elements: {
+                              avatarBox: "h-8 w-8"
+                            }
+                          }}
+                        />
+                        <div>
+                          <p className="text-sm font-medium">Welcome back!</p>
+                          <p className="text-xs text-muted-foreground">{user?.firstName || 'User'}</p>
+                        </div>
                       </div>
-                    </Button>
-                  </div>
+                    </div>
 
-                  {/* User Actions */}
-                  <div className="space-y-2">
-                    <h3 className="text-sm font-medium text-muted-foreground">Account</h3>
-                    <Button variant="outline" className="w-full justify-start">
-                      <LogIn className="mr-2 h-4 w-4" />
-                      Sign In
-                    </Button>
-                    <Button variant="ghost" className="w-full justify-start">
-                      <User className="mr-2 h-4 w-4" />
-                      Create Account
-                    </Button>
-                  </div>
-
-                  {/* Quick Actions */}
-                  <div className="space-y-2">
-                    <h3 className="text-sm font-medium text-muted-foreground">Quick Actions</h3>
-                    <Button variant="ghost" className="w-full justify-start">
-                      <Heart className="mr-2 h-4 w-4" />
-                      Favorites
-                    </Button>
-                    <Button variant="ghost" className="w-full justify-start">
-                      <Ticket className="mr-2 h-4 w-4" />
-                      My Bookings
-                    </Button>
-                    <Button variant="ghost" className="w-full justify-start">
-                      <Settings className="mr-2 h-4 w-4" />
-                      Settings
-                    </Button>
-                  </div>
+                    {/* Quick Actions for signed in users */}
+                    <div className="space-y-2">
+                      <h3 className="text-sm font-medium text-muted-foreground">Quick Actions</h3>
+                      <Button variant="ghost" className="w-full justify-start">
+                        <Heart className="mr-2 h-4 w-4" />
+                        Favorites
+                      </Button>
+                      <Button variant="ghost" className="w-full justify-start">
+                        <Ticket className="mr-2 h-4 w-4" />
+                        My Bookings
+                      </Button>
+                      <Button variant="ghost" className="w-full justify-start">
+                        <Settings className="mr-2 h-4 w-4" />
+                        Settings
+                      </Button>
+                    </div>
+                  </SignedIn>
 
                   {/* Theme Toggle Mobile */}
                   <div className="space-y-2">

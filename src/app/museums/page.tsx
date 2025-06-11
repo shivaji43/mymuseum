@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, Suspense } from "react"
 import { useSearchParams } from "next/navigation"
 import Script from "next/script"
 import { useToast } from "@/hooks/use-toast"
@@ -51,7 +51,7 @@ const categories = [
   { value: "History", label: "History Museums", icon: Landmark },
 ]
 
-export default function MuseumsPage() {
+function MuseumsContent() {
   const [searchTerm, setSearchTerm] = useState("")
   const [loading, setLoading] = useState(false)
   const { toast } = useToast()
@@ -493,5 +493,13 @@ export default function MuseumsPage() {
         strategy="lazyOnload"
       />
     </div>
+  )
+}
+
+export default function MuseumsPage() {
+  return (
+    <Suspense fallback={<div className="bg-background p-8 text-center">Loading museums...</div>}>
+      <MuseumsContent />
+    </Suspense>
   )
 }

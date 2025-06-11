@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -8,7 +8,7 @@ import { Loader2 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { getMuseumById, getCafeById, getShowById } from "@/lib/data"
 
-export default function BookingRedirectPage() {
+function BookingRedirectContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const { toast } = useToast()
@@ -112,5 +112,23 @@ export default function BookingRedirectPage() {
         </CardContent>
       </Card>
     </div>
+  )
+}
+
+export default function BookingRedirectPage() {
+  return (
+    <Suspense fallback={<div className="container mx-auto py-20 flex items-center justify-center min-h-[50vh]">
+      <Card className="w-full max-w-md">
+        <CardHeader>
+          <CardTitle>Loading...</CardTitle>
+          <CardDescription>Please wait</CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col items-center justify-center">
+          <Loader2 className="h-12 w-12 animate-spin text-primary" />
+        </CardContent>
+      </Card>
+    </div>}>
+      <BookingRedirectContent />
+    </Suspense>
   )
 }

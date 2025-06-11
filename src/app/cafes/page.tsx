@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, Suspense } from "react"
 import { useSearchParams } from "next/navigation"
 import Script from "next/script"
 import { useToast } from "@/hooks/use-toast"
@@ -73,7 +73,7 @@ const timeSlots = [
   "9:00 PM",
 ]
 
-export default function CafesPage() {
+function CafesContent() {
   const [searchTerm, setSearchTerm] = useState("")
   const [selectedCategory, setSelectedCategory] = useState("all")
   const [sortBy, setSortBy] = useState("featured")
@@ -612,5 +612,13 @@ export default function CafesPage() {
         strategy="lazyOnload"
       />
     </div>
+  )
+}
+
+export default function CafesPage() {
+  return (
+    <Suspense fallback={<div className="bg-background p-8 text-center">Loading cafes...</div>}>
+      <CafesContent />
+    </Suspense>
   )
 }

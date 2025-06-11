@@ -1,12 +1,12 @@
 "use client"
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { Check, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import Link from 'next/link'
 
-export default function PaymentSuccess() {
+function PaymentSuccessContent() {
   const searchParams = useSearchParams()
   const [verifying, setVerifying] = useState(true)
   // Hardcoded to true to always show success
@@ -75,5 +75,13 @@ export default function PaymentSuccess() {
         )}
       </div>
     </div>
+  )
+}
+
+export default function PaymentSuccess() {
+  return (
+    <Suspense fallback={<div className="container max-w-md mx-auto py-16 px-4">Loading...</div>}>
+      <PaymentSuccessContent />
+    </Suspense>
   )
 }

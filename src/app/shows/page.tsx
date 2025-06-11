@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, Suspense } from "react"
 import { useSearchParams } from "next/navigation"
 import Image from "next/image"
 import { Badge } from "@/components/ui/badge"
@@ -55,7 +55,7 @@ const categories = [
   { value: "Jazz", label: "Jazz", icon: Palette },
 ]
 
-export default function ShowsPage() {
+function ShowsContent() {
   const [searchTerm, setSearchTerm] = useState("")
   const [selectedCategory, setSelectedCategory] = useState("all")
   const [sortBy, setSortBy] = useState("featured")
@@ -564,5 +564,13 @@ export default function ShowsPage() {
         strategy="lazyOnload"
       />
     </div>
+  )
+}
+
+export default function ShowsPage() {
+  return (
+    <Suspense fallback={<div className="bg-background p-8 text-center">Loading shows...</div>}>
+      <ShowsContent />
+    </Suspense>
   )
 }

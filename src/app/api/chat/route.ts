@@ -17,7 +17,11 @@ import {
   getMuseumCities,
   getCafeCities,
   getShowCities,
+  getMuseumById,
+  getCafeById,
+  getShowById,
 } from "@/lib/data"
+import { createBookingSession } from "@/lib/booking"
 
 export const maxDuration = 30
 
@@ -38,6 +42,13 @@ Tool Usage Guidelines:
 - Users ask examples in small text for example farzi cafe , cafe mysore , but in db they are labelled as Café treat them similarly seach cafe as Café
 
 IMPORTANT: Always call the appropriate tool BEFORE providing any venue information. If a tool returns no results, acknowledge this and suggest alternatives.
+
+When users express interest in booking or making reservations:
+- For museums → Use createMuseumBooking tool
+- For cafes → Use createCafeBooking tool
+- For shows → Use createShowBooking tool
+
+After using a booking tool, provide the booking link and explain that clicking it will take them to complete their booking with payment.
 
 As an expert on Indian historical museums, you:
 - Share fascinating stories about museums and their collections
@@ -268,7 +279,134 @@ export async function POST(req: Request) {
             return { shows: filtered, count: filtered.length }
           },
         }),
-      },
+        createMuseumBooking: tool({
+          description: "Create a booking link for a museum visit when the user wants to book a specific museum",
+          parameters: z.object({
+            museumId: z.number().describe("ID of the museum to book"),
+            date: z.string().optional().describe("Selected date for the visit in YYYY-MM-DD format"),
+            quantity: z.number().optional().describe("Number of tickets to book"),
+          }),
+          execute: async ({ museumId, date, quantity = 1 }) => {
+            console.log(`Creating museum booking for ID: ${museumId}, Date: ${date}, Quantity: ${quantity}`)
+            const museum = await getMuseumById(museumId)
+            
+            if (!museum) {
+              return { 
+                success: false, 
+                message: "Sorry, could not find the museum you're trying to book.",
+                bookingUrl: null
+              }
+            }
+            
+            // Create direct URL to museums page with booking parameters
+            let bookingUrl = `/museums?bookingId=${museumId}`
+            
+            if (date) {
+              bookingUrl += `&date=${encodeURIComponent(date)}`
+            }
+            
+            if (quantity && quantity > 1) {
+              bookingUrl += `&quantity=${quantity}`
+            }
+            
+            return {
+              success: true,
+              message: `I've prepared your booking for **${museum.name}**. [${museum.name}](${bookingUrl}) Use the booking button below to proceed to the payment page.`,
+              bookingUrl: bookingUrl,
+              museum: museum,
+              instructions: "When you click the booking button, the booking form will open automatically where you can complete your payment securely."
+            }
+          },
+        }),
+        createCafeBooking: tool({
+          description: "Create a booking link for a cafe reservation when the user wants to reserve a table",
+          parameters: z.object({
+            cafeId: z.number().describe("ID of the cafe to book"),
+            date: z.string().optional().describe("Selected date for the reservation in YYYY-MM-DD format"),
+            quantity: z.number().optional().describe("Number of people in the party"),
+            timeSlot: z.string().optional().describe("Selected time slot for the reservation"),
+          }),
+          execute: async ({ cafeId, date, quantity = 2, timeSlot }) => {
+            console.log(`Creating cafe booking for ID: ${cafeId}, Date: ${date}, People: ${quantity}, Time: ${timeSlot}`)
+            const cafe = await getCafeById(cafeId)
+            
+            if (!cafe) {
+              return { 
+                success: false, 
+                message: "Sorry, could not find the cafe you're trying to book.",
+                bookingUrl: null
+              }
+            }
+            
+            // Create direct URL to cafes page with booking parameters
+            let bookingUrl = `/cafes?bookingId=${cafeId}`
+            
+            if (date) {
+              bookingUrl += `&date=${encodeURIComponent(date)}`
+            }
+            
+            if (quantity && quantity > 1) {
+              bookingUrl += `&quantity=${quantity}`
+            }
+            
+            if (timeSlot) {
+              bookingUrl += `&timeSlot=${encodeURIComponent(timeSlot)}`
+            }
+            
+            return {
+              success: true,
+              message: `I've prepared your table reservation for **${cafe.name}**. [${cafe.name}](${bookingUrl}) Use the booking button below to reserve your table and proceed to payment.`,
+              bookingUrl: bookingUrl,
+              cafe: cafe,
+              instructions: "When you click the booking button, the reservation form will open automatically where you can complete your payment securely."
+            }
+          },
+        }),
+        createShowBooking: tool({
+          description: "Create a booking link for show tickets when the user wants to book a show",
+          parameters: z.object({
+            showId: z.number().describe("ID of the show to book"),
+            date: z.string().optional().describe("Selected date for the show in YYYY-MM-DD format"),
+            quantity: z.number().optional().describe("Number of tickets to book"),
+            showtime: z.string().optional().describe("Selected showtime for the show"),
+          }),
+          execute: async ({ showId, date, quantity = 1, showtime }) => {
+            console.log(`Creating show booking for ID: ${showId}, Date: ${date}, Tickets: ${quantity}, Showtime: ${showtime}`)
+            const show = await getShowById(showId)
+            
+            if (!show) {
+              return { 
+                success: false, 
+                message: "Sorry, could not find the show you're trying to book.",
+                bookingUrl: null
+              }
+            }
+            
+            // Create direct URL to shows page with booking parameters
+            let bookingUrl = `/shows?bookingId=${showId}`
+            
+            if (date) {
+              bookingUrl += `&date=${encodeURIComponent(date)}`
+            }
+            
+            if (quantity && quantity > 1) {
+              bookingUrl += `&quantity=${quantity}`
+            }
+            
+            if (showtime) {
+              bookingUrl += `&showtime=${encodeURIComponent(showtime)}`
+            }
+            
+            return {
+              success: true,
+              message: `I've prepared your ticket booking for **${show.name}**. [${show.name}](${bookingUrl}) Use the booking button below to purchase your tickets.`,
+              bookingUrl: bookingUrl,
+              show: show,
+              instructions: "When you click the booking button, the ticket booking form will open automatically where you can complete your payment securely."
+            }
+          },
+        })
+      }
     })
 
     return result.toDataStreamResponse()

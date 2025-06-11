@@ -1,6 +1,7 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useState, useEffect } from "react"
+import { useSearchParams } from "next/navigation"
 import Image from "next/image"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -36,10 +37,13 @@ import {
   Palette,
   PartyPopper,
   Volume2,
+  Loader2,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { format } from "date-fns"
 import { getShows, type Show } from "@/lib/data"
+import Script from "next/script"
+import { useToast } from "@/hooks/use-toast"
 
 const categories = [
   { value: "all", label: "All Shows", icon: Theater },
@@ -59,24 +63,69 @@ export default function ShowsPage() {
   const [selectedShow, setSelectedShow] = useState<(typeof shows)[0] | null>(null)
   const [ticketQuantity, setTicketQuantity] = useState(2)
   const [selectedShowtime, setSelectedShowtime] = useState("")
+  const [loading, setLoading] = useState(false)
+  const { toast } = useToast()
+  const searchParams = useSearchParams()
 
   // Remove the hardcoded shows array and replace with:
   const [shows, setShows] = useState<Show[]>([])
-  const [loading, setLoading] = useState(true)
+  const [fetchLoading, setFetchLoading] = useState(true)
 
   useEffect(() => {
     async function fetchShows() {
       try {
         const data = await getShows()
         setShows(data)
+        
+        // Check for booking parameters from chat interface
+        const bookingId = searchParams.get('bookingId')
+        if (bookingId) {
+          const showId = parseInt(bookingId)
+          const foundShow = data.find(s => s.id === showId)
+          
+          if (foundShow) {
+            setSelectedShow(foundShow)
+            
+            // Handle date parameter
+            const dateParam = searchParams.get('date')
+            if (dateParam) {
+              try {
+                const bookingDate = new Date(dateParam)
+                if (!isNaN(bookingDate.getTime())) {
+                  setSelectedDate(bookingDate)
+                }
+              } catch (e) {
+                console.error("Invalid date format from URL params", e)
+              }
+            }
+            
+            // Handle quantity parameter
+            const quantityParam = searchParams.get('quantity')
+            if (quantityParam) {
+              const parsedQuantity = parseInt(quantityParam)
+              if (!isNaN(parsedQuantity) && parsedQuantity > 0 && parsedQuantity <= 8) {
+                setTicketQuantity(parsedQuantity)
+              }
+            }
+            
+            // Handle showtime parameter
+            const showtimeParam = searchParams.get('showtime')
+            if (showtimeParam && foundShow.showtimes && foundShow.showtimes.includes(showtimeParam)) {
+              setSelectedShowtime(showtimeParam)
+            }
+            
+            // Auto-open the booking dialog
+            document.getElementById('booking-dialog-trigger')?.click()
+          }
+        }
       } catch (error) {
         console.error("Error fetching shows:", error)
       } finally {
-        setLoading(false)
+        setFetchLoading(false)
       }
     }
     fetchShows()
-  }, [])
+  }, [searchParams])
 
   // Update the filteredShows logic to use the shows state:
   const filteredShows = shows
@@ -122,7 +171,89 @@ export default function ShowsPage() {
   }
 
   // Add loading state in the render:
-  if (loading) {
+  // Handle payment process
+  const handlePayment = async () => {
+    if (!selectedDate || !selectedShowtime || !selectedShow) {
+      toast({
+        title: "Missing Information",
+        description: "Please select a date and showtime.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    setLoading(true)
+
+    try {
+      // Create order on the server
+      const orderResponse = await fetch('/api/payment/create-order', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          amount: selectedShow.ticketPrice * ticketQuantity,
+          currency: 'INR',
+          receipt: `show-${selectedShow.id}-${Date.now()}`,
+          notes: {
+            showId: selectedShow.id,
+            showName: selectedShow.name,
+            date: selectedDate.toISOString(),
+            showtime: selectedShowtime,
+            ticketQuantity: ticketQuantity,
+            venue: selectedShow.venue,
+          }
+        }),
+      })
+
+      const order = await orderResponse.json()
+      
+      if (!order.id) {
+        throw new Error(order.error || 'Failed to create order');
+      }
+
+      // Load Razorpay checkout
+      const options = {
+        key: "rzp_test_RhbGZCRx4MVEJU", // Replace with your actual key when going to production
+        amount: order.amount,
+        currency: order.currency,
+        name: "Museum Experience",
+        description: `Tickets for ${selectedShow.name}`,
+        order_id: order.id,
+        prefill: {
+          name: "",
+          email: "",
+          contact: "",
+        },
+        notes: {
+          showId: selectedShow.id,
+          showName: selectedShow.name,
+          date: selectedDate.toISOString(),
+          showtime: selectedShowtime,
+          ticketQuantity: ticketQuantity,
+        },
+        theme: {
+          color: "#3B82F6",
+        },
+        callback_url: `${window.location.origin}/payment-success`,
+      };
+
+      const razorpay = (window as any).Razorpay(options);
+      razorpay.open();
+      
+    } catch (error) {
+      console.error('Payment error:', error);
+      toast({
+        title: "Payment Error",
+        description: "Failed to initiate payment. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  if (fetchLoading && !selectedShow) {
     return <div className="bg-background">Loading...</div>
   }
 
@@ -288,7 +419,13 @@ export default function ShowsPage() {
                   </div>
                   <Dialog>
                     <DialogTrigger asChild>
-                      <Button onClick={() => setSelectedShow(show)}>Book Tickets</Button>
+                      <Button 
+                        id={show.id === selectedShow?.id ? 'booking-dialog-trigger' : ''}
+                        variant="secondary" 
+                        onClick={() => setSelectedShow(show)}
+                      >
+                        Purchase Tickets
+                      </Button>
                     </DialogTrigger>
                     <DialogContent className="max-w-md">
                       <DialogHeader>
@@ -386,8 +523,20 @@ export default function ShowsPage() {
                         </div>
                       </div>
                       <DialogFooter>
-                        <Button className="w-full" size="lg" disabled={!selectedDate || !selectedShowtime}>
-                          {selectedShow?.ticketPrice === 0 ? "Reserve Seats" : "Purchase Tickets"}
+                        <Button 
+                          className="w-full" 
+                          size="lg" 
+                          disabled={!selectedDate || !selectedShowtime || loading}
+                          onClick={handlePayment}
+                        >
+                          {loading ? (
+                            <>
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              Processing...
+                            </>
+                          ) : (
+                            selectedShow?.ticketPrice === 0 ? "Reserve Seats" : "Purchase Tickets"
+                          )}
                         </Button>
                       </DialogFooter>
                     </DialogContent>
@@ -408,6 +557,12 @@ export default function ShowsPage() {
           </div>
         )}
       </div>
+      
+      {/* Load Razorpay script */}
+      <Script
+        src="https://checkout.razorpay.com/v1/checkout.js"
+        strategy="lazyOnload"
+      />
     </div>
   )
 }

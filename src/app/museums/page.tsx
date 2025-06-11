@@ -1,6 +1,9 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { useSearchParams } from "next/navigation"
+import Script from "next/script"
+import { useToast } from "@/hooks/use-toast"
 import Image from "next/image"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -34,6 +37,7 @@ import {
   Palette,
   Building,
   Landmark,
+  Loader2,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { format } from "date-fns"
@@ -49,27 +53,66 @@ const categories = [
 
 export default function MuseumsPage() {
   const [searchTerm, setSearchTerm] = useState("")
+  const [loading, setLoading] = useState(false)
+  const { toast } = useToast()
+  const searchParams = useSearchParams()
   const [selectedCategory, setSelectedCategory] = useState("all")
   const [sortBy, setSortBy] = useState("featured")
   const [selectedDate, setSelectedDate] = useState<Date>()
   const [selectedMuseum, setSelectedMuseum] = useState<Museum | null>(null)
   const [ticketQuantity, setTicketQuantity] = useState(1)
   const [museums, setMuseums] = useState<Museum[]>([])
-  const [loading, setLoading] = useState(true)
+  const [fetchLoading, setFetchLoading] = useState(true)
 
   useEffect(() => {
     async function fetchMuseums() {
       try {
         const data = await getMuseums()
         setMuseums(data)
+        
+        // Check for booking parameters from chat interface
+        const bookingId = searchParams.get('bookingId')
+        if (bookingId) {
+          const museumId = parseInt(bookingId)
+          const foundMuseum = data.find(m => m.id === museumId)
+          
+          if (foundMuseum) {
+            setSelectedMuseum(foundMuseum)
+            
+            // Handle date parameter
+            const dateParam = searchParams.get('date')
+            if (dateParam) {
+              try {
+                const bookingDate = new Date(dateParam)
+                if (!isNaN(bookingDate.getTime())) {
+                  setSelectedDate(bookingDate)
+                }
+              } catch (e) {
+                console.error("Invalid date format from URL params", e)
+              }
+            }
+            
+            // Handle quantity parameter
+            const quantityParam = searchParams.get('quantity')
+            if (quantityParam) {
+              const parsedQuantity = parseInt(quantityParam)
+              if (!isNaN(parsedQuantity) && parsedQuantity > 0 && parsedQuantity <= 8) {
+                setTicketQuantity(parsedQuantity)
+              }
+            }
+            
+            // Auto-open the booking dialog
+            document.getElementById('booking-dialog-trigger')?.click()
+          }
+        }
       } catch (error) {
         console.error("Error fetching museums:", error)
       } finally {
-        setLoading(false)
+        setFetchLoading(false)
       }
     }
     fetchMuseums()
-  }, [])
+  }, [searchParams])
 
   // Update the filteredMuseums logic to use the museums state:
   const filteredMuseums = museums
@@ -99,8 +142,96 @@ export default function MuseumsPage() {
   }
 
   // Add loading state in the render:
-  if (loading) {
+  if (fetchLoading) {
     return <div className="bg-background">Loading...</div>
+  }
+  
+  // Handle payment process for museum bookings
+  const handleMuseumPayment = async () => {
+    if (!selectedDate || !selectedMuseum) {
+      toast({
+        title: "Missing Information",
+        description: "Please select a date for your visit.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    setLoading(true)
+
+    try {
+      const userName = "Guest User" // In a real app, you would get this from user input or authentication
+      const userEmail = "guest@example.com" // In a real app, you would get this from user input or authentication
+      const userPhone = "" // In a real app, you would get this from user input or authentication
+
+      // Calculate payment amount
+      const amount = selectedMuseum.price * ticketQuantity
+      
+      // Create order on the server
+      const orderResponse = await fetch('/api/payment/create-order', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          amount: amount,
+          currency: 'INR',
+          receipt: `museum-${Date.now()}`,
+          notes: {
+            name: userName,
+            email: userEmail,
+            phone: userPhone,
+            type: 'museum',
+            item: selectedMuseum.name,
+            date: selectedDate.toISOString(),
+            ticketQuantity,
+          }
+        }),
+      })
+
+      const order = await orderResponse.json()
+      
+      if (!order.id) {
+        throw new Error(order.error || 'Failed to create order');
+      }
+
+      // Load Razorpay checkout
+      const options = {
+        key: "rzp_test_RhbGZCRx4MVEJU", // Hardcoded for testing - in production use environment variables
+        amount: order.amount,
+        currency: order.currency,
+        name: "Museum Experience",
+        description: `Tickets for ${selectedMuseum.name}`,
+        order_id: order.id,
+        prefill: {
+          name: userName,
+          email: userEmail,
+          contact: userPhone,
+        },
+        notes: {
+          type: 'museum',
+          item: selectedMuseum.name,
+          date: selectedDate.toISOString(),
+        },
+        theme: {
+          color: "#3B82F6",
+        },
+        callback_url: `${window.location.origin}/payment-success`,
+      };
+
+      const razorpay = (window as any).Razorpay(options);
+      razorpay.open();
+      
+    } catch (error) {
+      console.error('Payment error:', error);
+      toast({
+        title: "Payment Error",
+        description: "Failed to initiate payment. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -245,7 +376,12 @@ export default function MuseumsPage() {
                   </div>
                   <Dialog>
                     <DialogTrigger asChild>
-                      <Button onClick={() => setSelectedMuseum(museum)}>Book Now</Button>
+                      <Button 
+                        id={museum.id === selectedMuseum?.id ? 'booking-dialog-trigger' : ''}
+                        onClick={() => setSelectedMuseum(museum)}
+                      >
+                        Book Now
+                      </Button>
                     </DialogTrigger>
                     <DialogContent className="max-w-md">
                       <DialogHeader>
@@ -316,8 +452,20 @@ export default function MuseumsPage() {
                         </div>
                       </div>
                       <DialogFooter>
-                        <Button className="w-full" size="lg">
-                          Confirm Booking
+                        <Button 
+                          className="w-full" 
+                          size="lg"
+                          disabled={!selectedDate || loading}
+                          onClick={handleMuseumPayment}
+                        >
+                          {loading ? (
+                            <>
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              Processing...
+                            </>
+                          ) : (
+                            `Pay ₹${selectedMuseum ? selectedMuseum.price * ticketQuantity : 0}`
+                          )}
                         </Button>
                       </DialogFooter>
                     </DialogContent>
@@ -338,6 +486,12 @@ export default function MuseumsPage() {
           </div>
         )}
       </div>
+
+      {/* Load Razorpay script */}
+      <Script
+        src="https://checkout.razorpay.com/v1/checkout.js"
+        strategy="lazyOnload"
+      />
     </div>
   )
 }

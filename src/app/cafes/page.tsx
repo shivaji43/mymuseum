@@ -1,6 +1,9 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { useSearchParams } from "next/navigation"
+import Script from "next/script"
+import { useToast } from "@/hooks/use-toast"
 import Image from "next/image"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -42,6 +45,7 @@ import {
 import { cn } from "@/lib/utils"
 import { format } from "date-fns"
 import { getCafes, type Cafe } from "@/lib/data"
+import { Loader2 } from "lucide-react"
 
 const categories = [
   { value: "all", label: "All Categories", icon: UtensilsCrossed },
@@ -74,27 +78,72 @@ export default function CafesPage() {
   const [selectedCategory, setSelectedCategory] = useState("all")
   const [sortBy, setSortBy] = useState("featured")
   const [selectedDate, setSelectedDate] = useState<Date>()
-  const [selectedCafe, setSelectedCafe] = useState<(typeof cafes)[0] | null>(null)
+  const [selectedCafe, setSelectedCafe] = useState<Cafe | null>(null)
   const [partySize, setPartySize] = useState(2)
   const [selectedTime, setSelectedTime] = useState("")
   const [specialRequests, setSpecialRequests] = useState("")
+  const [loading, setLoading] = useState(false)
+  const { toast } = useToast()
+  const searchParams = useSearchParams()
 
   const [cafes, setCafes] = useState<Cafe[]>([])
-  const [loading, setLoading] = useState(true)
+  const [fetchLoading, setFetchLoading] = useState(true)
 
   useEffect(() => {
     async function fetchCafes() {
       try {
         const data = await getCafes()
         setCafes(data)
+        
+        // Check for booking parameters from chat interface
+        const bookingId = searchParams.get('bookingId')
+        if (bookingId) {
+          const cafeId = parseInt(bookingId)
+          const foundCafe = data.find(c => c.id === cafeId)
+          
+          if (foundCafe) {
+            setSelectedCafe(foundCafe)
+            
+            // Handle date parameter
+            const dateParam = searchParams.get('date')
+            if (dateParam) {
+              try {
+                const bookingDate = new Date(dateParam)
+                if (!isNaN(bookingDate.getTime())) {
+                  setSelectedDate(bookingDate)
+                }
+              } catch (e) {
+                console.error("Invalid date format from URL params", e)
+              }
+            }
+            
+            // Handle party size parameter
+            const quantityParam = searchParams.get('quantity')
+            if (quantityParam) {
+              const parsedQuantity = parseInt(quantityParam)
+              if (!isNaN(parsedQuantity) && parsedQuantity > 0 && parsedQuantity <= 8) {
+                setPartySize(parsedQuantity)
+              }
+            }
+            
+            // Handle time slot parameter
+            const timeSlotParam = searchParams.get('timeSlot')
+            if (timeSlotParam) {
+              setSelectedTime(timeSlotParam)
+            }
+            
+            // Auto-open the booking dialog
+            document.getElementById('booking-dialog-trigger')?.click()
+          }
+        }
       } catch (error) {
         console.error("Error fetching cafes:", error)
       } finally {
-        setLoading(false)
+        setFetchLoading(false)
       }
     }
     fetchCafes()
-  }, [])
+  }, [searchParams])
 
   const filteredCafes = cafes
     .filter(
@@ -149,8 +198,99 @@ export default function CafesPage() {
     }
   }
 
-  if (loading) {
+  if (fetchLoading) {
     return <div className="bg-background">Loading...</div>
+  }
+
+  // Handle payment process
+  const handleCafePayment = async () => {
+    if (!selectedDate || !selectedTime || !selectedCafe) {
+      toast({
+        title: "Missing Information",
+        description: "Please select a date, time, and cafe.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    setLoading(true)
+
+    try {
+      const userName = "Guest User" // In a real app, you would get this from user input or authentication
+      const userEmail = "guest@example.com" // In a real app, you would get this from user input or authentication
+      const userPhone = "" // In a real app, you would get this from user input or authentication
+
+      // Calculate payment amount
+      const amount = selectedCafe.avgPrice * partySize
+      
+      // Create order on the server
+      const orderResponse = await fetch('/api/payment/create-order', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          amount: amount,
+          currency: 'INR',
+          receipt: `cafe-${Date.now()}`,
+          notes: {
+            name: userName,
+            email: userEmail,
+            phone: userPhone,
+            type: 'cafe',
+            item: selectedCafe.name,
+            date: selectedDate.toISOString(),
+            time: selectedTime,
+            partySize,
+            specialRequests
+          }
+        }),
+      })
+
+      const order = await orderResponse.json()
+      
+      if (!order.id) {
+        throw new Error(order.error || 'Failed to create order');
+      }
+
+      // Load Razorpay checkout
+      const options = {
+        key: "rzp_test_RhbGZCRx4MVEJU", // Hardcoded for testing - in production use environment variables
+        amount: order.amount,
+        currency: order.currency,
+        name: "Museum Experience",
+        description: `Reservation at ${selectedCafe.name}`,
+        order_id: order.id,
+        prefill: {
+          name: userName,
+          email: userEmail,
+          contact: userPhone,
+        },
+        notes: {
+          type: 'cafe',
+          item: selectedCafe.name,
+          date: selectedDate.toISOString(),
+          time: selectedTime
+        },
+        theme: {
+          color: "#3B82F6",
+        },
+        callback_url: `${window.location.origin}/payment-success`,
+      };
+
+      const razorpay = (window as any).Razorpay(options);
+      razorpay.open();
+      
+    } catch (error) {
+      console.error('Payment error:', error);
+      toast({
+        title: "Payment Error",
+        description: "Failed to initiate payment. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -318,7 +458,12 @@ export default function CafesPage() {
                   </div>
                   <Dialog>
                     <DialogTrigger asChild>
-                      <Button onClick={() => setSelectedCafe(cafe)}>Reserve Table</Button>
+                      <Button 
+                        id={cafe.id === selectedCafe?.id ? 'booking-dialog-trigger' : ''}
+                        onClick={() => setSelectedCafe(cafe)}
+                      >
+                        Reserve Table
+                      </Button>
                     </DialogTrigger>
                     <DialogContent className="max-w-md">
                       <DialogHeader>
@@ -423,9 +568,24 @@ export default function CafesPage() {
                         </div>
                       </div>
                       <DialogFooter>
-                        <Button className="w-full" size="lg" disabled={!selectedDate || !selectedTime}>
-                          Confirm Reservation
+                        <Button 
+                          className="w-full" 
+                          size="lg" 
+                          disabled={!selectedDate || !selectedTime || loading}
+                          onClick={handleCafePayment}
+                        >
+                          {loading ? (
+                            <>
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              Processing...
+                            </>
+                          ) : (
+                            `Pay ₹${selectedCafe ? selectedCafe.avgPrice * partySize : 0}`
+                          )}
                         </Button>
+                        {/* <div className="text-xs text-center w-full mt-2 text-muted-foreground">
+                          Secure payments powered by Razorpay
+                        </div> */}
                       </DialogFooter>
                     </DialogContent>
                   </Dialog>
@@ -445,6 +605,12 @@ export default function CafesPage() {
           </div>
         )}
       </div>
+
+      {/* Load Razorpay script */}
+      <Script
+        src="https://checkout.razorpay.com/v1/checkout.js"
+        strategy="lazyOnload"
+      />
     </div>
   )
 }
